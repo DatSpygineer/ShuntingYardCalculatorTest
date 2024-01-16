@@ -1,12 +1,30 @@
+trait AsLowerCase {
+	fn as_lowercase(&self) -> char;
+}
+trait AsUpperCase {
+	fn as_uppercase(&self) -> char;
+}
+impl AsLowerCase for char {
+	fn as_lowercase(&self) -> char {
+		let result: Vec<_> = self.to_lowercase().collect();
+		return *result.first().unwrap();
+	}
+}
+impl AsUpperCase for char {
+	fn as_uppercase(&self) -> char {
+		let result: Vec<_> = self.to_uppercase().collect();
+		return *result.first().unwrap();
+	}
+}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum UnaryOperatorType {
 	Negative,
 	Not,
 	Invert
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum BinaryOperatorType {
 	Add,
 	Sub,
@@ -48,48 +66,90 @@ impl BinaryOperatorType {
 	}
 }
 
-#[derive(Copy, Clone)]
 pub enum Token {
 	Invalid,
 	Integer(i64),
-	Number(f64),
+	Float(f64),
 	Identifier(String),
 	UnaryOperator(UnaryOperatorType),
 	BinaryOperator(BinaryOperatorType),
 	OpenParen,
 	CloseParen
 }
-impl Token {
-	pub fn is_binary_operator(&self) -> bool {
+
+impl Clone for Token {
+	fn clone(&self) -> Self {
 		match self {
-			Token::Invalid => false,
-			Token::Integer(_) => false,
-			Token::Number(_) => false,
-			Token::Identifier(_) => false,
-			Token::UnaryOperator(_) => false,
-			Token::BinaryOperator(_) => true,
-			Token::OpenParen => false,
-			Token::CloseParen => false,
+			Token::Invalid => Token::Invalid,
+			Token::Integer(i) => Token::Integer(i.clone()),
+			Token::Float(f) => Token::Float(f.clone()),
+			Token::Identifier(id) => Token::Identifier(id.clone()),
+			Token::UnaryOperator(u) => Token::UnaryOperator(u.clone()),
+			Token::BinaryOperator(b) => Token::BinaryOperator(b.clone()),
+			Token::OpenParen => Token::OpenParen,
+			Token::CloseParen => Token::CloseParen
 		}
-	}
-	pub fn is_unary_operator(&self) -> bool {
-		match self {
-			Token::Invalid => false,
-			Token::Integer(_) => false,
-			Token::Number(_) => false,
-			Token::Identifier(_) => false,
-			Token::UnaryOperator(_) => true,
-			Token::BinaryOperator(_) => false,
-			Token::OpenParen => false,
-			Token::CloseParen => false,
-		}
-	}
-	pub fn is_operator(&self) -> bool {
-		self.is_unary_operator() || self.is_binary_operator()
 	}
 }
 
-#[derive(Copy, Clone)]
+impl PartialEq<Self> for Token {
+	fn eq(&self, other: &Self) -> bool {
+		match self {
+			Token::Invalid => {
+				match other {
+					Token::Invalid => true,
+					_ => false
+				}
+			},
+			Token::Integer(_) => {
+				match other {
+					Token::Integer(_) => true,
+					_ => false
+				}
+			},
+			Token::Float(_) => {
+				match other {
+					Token::Float(_) => true,
+					_ => false
+				}
+			},
+			Token::Identifier(_) => {
+				match other {
+					Token::Identifier(_) => true,
+					_ => false
+				}
+			},
+			Token::UnaryOperator(_) => {
+				match other {
+					Token::UnaryOperator(_) => true,
+					_ => false
+				}
+			},
+			Token::BinaryOperator(_) => {
+				match other {
+					Token::BinaryOperator(_) => true,
+					_ => false
+				}
+			},
+			Token::OpenParen => {
+				match other {
+					Token::OpenParen => true,
+					_ => false
+				}
+			},
+			Token::CloseParen => {
+				match other {
+					Token::CloseParen => true,
+					_ => false
+				}
+			}
+		}
+	}
+}
+impl Eq for Token {
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TokenizerState {
 	Default,
 	Number,
@@ -97,7 +157,7 @@ pub enum TokenizerState {
 	BinaryOperator
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NumberBaseType {
 	Decimal,
 	Binary,
@@ -117,14 +177,34 @@ impl NumberBaseType {
 				c >= '0' && c <= '7'
 			},
 			NumberBaseType::Hex => {
-				(c >= '0' && c <= '9') || (*c.to_lowercase() >= 'a' && *c.to_lowercase() <= 'f')
+				let clow = c.as_lowercase();
+				(c >= '0' && c <= '9') || (clow >= 'a' && clow <= 'f')
 			}
 		}
 	}
 }
 
 impl Token {
-	fn is_operator(c: char) -> bool {
+	pub fn is_operator(&self) -> bool {
+		match self {
+			Token::UnaryOperator(_) => true,
+			Token::BinaryOperator(_) => true,
+			_ => false
+		}
+	}
+	pub fn is_unary_operator(&self) -> bool {
+		match self {
+			Token::UnaryOperator(_) => true,
+			_ => false
+		}
+	}
+	pub fn is_binary_operator(&self) -> bool {
+		match self {
+			Token::BinaryOperator(_) => true,
+			_ => false
+		}
+	}
+	fn char_is_operator(c: char) -> bool {
 		"+-*/%&|^<>=".contains(c)
 	}
 	pub fn tokenize(src: &str) -> Result<Vec<Token>, String> {
@@ -152,7 +232,7 @@ impl Token {
 										tokens.push(Token::Integer(0));
 										break;
 									}
-									c = *cr.unwrap().to_lowercase();
+									c = cr.unwrap().as_lowercase();
 									if c == 'x' {
 										numberBase = NumberBaseType::Hex;
 										i += 1;
@@ -183,7 +263,7 @@ impl Token {
 									}
 									i += 1
 								}
-							} else if Token::is_operator(c) {
+							} else if Token::char_is_operator(c) {
 								state = TokenizerState::BinaryOperator;
 							} else {
 								return Err(format!("Unexpected character '{}'", c));
@@ -203,13 +283,13 @@ impl Token {
 							} else if numberBase.is_char_valid(c) {
 								tokenValue.push(c);
 								i += 1;
-							} else if Token::is_operator(c) || c.is_whitespace() {
+							} else if Token::char_is_operator(c) || c.is_whitespace() {
 								match numberBase {
 									NumberBaseType::Decimal => {
 										if tokenValue.contains('.') {
 											match tokenValue.parse::<f64>() {
 												Ok(f) => {
-													tokens.push(Token::Number(f))
+													tokens.push(Token::Float(f))
 												},
 												Err(err) => {
 													return Err(format!("Failed to parse number literal: \"{:?}\"", err));
@@ -265,7 +345,7 @@ impl Token {
 							}
 						},
 						TokenizerState::Identifier => {
-							if Token::is_operator(c) || c.is_whitespace() {
+							if Token::char_is_operator(c) || c.is_whitespace() {
 								tokens.push(Token::Identifier(tokenValue.clone()));
 								tokenValue.clear();
 								state = TokenizerState::Default;

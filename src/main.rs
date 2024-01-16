@@ -56,7 +56,7 @@ impl Calculator {
 						}
 
 						let mut item = operator_stack.back().unwrap();
-						while item != Token::OpenParen {
+						while *item != Token::OpenParen {
 							output.push_back(operator_stack.pop_back().unwrap());
 							if operator_stack.len() == 0 {
 								return Err("Expected an opening parenthesis!".to_string());
