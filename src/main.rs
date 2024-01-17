@@ -1,13 +1,431 @@
-pub mod token;
+extern crate colored;
 
+pub mod token;
+mod collections;
+
+use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
+use std::fmt::{Display, Formatter};
+use std::io;
+use std::io::{BufRead, Write};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 use crate::token::*;
 use crate::Value::{Float, Integer, Undefined};
+use colored::Colorize;
+use crate::collections::{Queue, Stack};
 
-enum Value {
+#[derive(Debug)]
+pub enum Value {
 	Undefined,
 	Integer(i64),
 	Float(f64)
+}
+
+impl Value {
+	pub fn is_undefined(&self) -> bool {
+		match self {
+			Undefined => true,
+			_ => false
+		}
+	}
+	pub fn pow(&self, rhs: &Value) -> Value {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left.pow((*i_right) as u32))
+					},
+					Float(f_right) => {
+						Float((*i_left as f64).powf(*f_right))
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left.powi(*i_right as i32))
+					},
+					Float(f_right) => {
+						Float(f_left.powf(*f_right))
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+	pub fn floor(&self) -> Value {
+		match self {
+			Undefined => Undefined,
+			Integer(int) => Integer(int.clone()),
+			Float(flt) => Integer(flt.floor() as i64)
+		}
+	}
+}
+impl Clone for Value {
+	fn clone(&self) -> Self {
+		match self {
+			Undefined => Undefined,
+			Integer(int) => Integer(int.clone()),
+			Float(flt) => Float(flt.clone())
+		}
+	}
+}
+
+impl Neg for Value {
+	type Output = Value;
+
+	fn neg(self) -> Self::Output {
+		match self {
+			Undefined => Undefined,
+			Integer(int) => { Integer(-int) },
+			Float(flt) => { Float(-flt) }
+		}
+	}
+}
+impl Add for Value {
+	type Output = Value;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left + i_right)
+					},
+					Float(f_right) => {
+						Float(i_left as f64 + f_right)
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left + (i_right as f64))
+					},
+					Float(f_right) => {
+						Float(f_left + f_right)
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+}
+impl Sub for Value {
+	type Output = Value;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left - i_right)
+					},
+					Float(f_right) => {
+						Float(i_left as f64 - f_right)
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left - (i_right as f64))
+					},
+					Float(f_right) => {
+						Float(f_left - f_right)
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+}
+impl Mul for Value {
+	type Output = Value;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left * i_right)
+					},
+					Float(f_right) => {
+						Float(i_left as f64 * f_right)
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left * (i_right as f64))
+					},
+					Float(f_right) => {
+						Float(f_left * f_right)
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+}
+impl Div for Value {
+	type Output = Value;
+
+	fn div(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left / i_right)
+					},
+					Float(f_right) => {
+						Float(i_left as f64 / f_right)
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left / (i_right as f64))
+					},
+					Float(f_right) => {
+						Float(f_left / f_right)
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+}
+impl Rem for Value {
+	type Output = Value;
+
+	fn rem(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(i_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Integer(i_left % i_right)
+					},
+					Float(f_right) => {
+						Float((i_left as f64) % f_right)
+					}
+					Undefined => Undefined
+				}
+			},
+			Float(f_left) => {
+				match rhs {
+					Integer(i_right) => {
+						Float(f_left % (i_right as f64))
+					},
+					Float(f_right) => {
+						Float(f_left % f_right)
+					}
+					Undefined => Undefined
+				}
+			}
+			Undefined => Undefined
+		}
+	}
+}
+impl BitAnd for Value {
+	type Output = Result<Value, String>;
+
+	fn bitand(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(l_int) => {
+				match rhs {
+					Integer(r_int) => {
+						Ok(Integer(l_int & r_int))
+					},
+					Float(_) => {
+						Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::And))
+					},
+					Undefined => Ok(Undefined)
+				}
+			}
+			Float(_) => {
+				Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::And))
+			}
+			Undefined => Ok(Undefined)
+		}
+	}
+}
+impl BitOr for Value {
+	type Output = Result<Value, String>;
+
+	fn bitor(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(l_int) => {
+				match rhs {
+					Integer(r_int) => {
+						Ok(Integer(l_int | r_int))
+					},
+					Float(_) => {
+						Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Or))
+					},
+					Undefined => Ok(Undefined)
+				}
+			}
+			Float(_) => {
+				Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Or))
+			}
+			Undefined => Ok(Undefined)
+		}
+	}
+}
+impl BitXor for Value {
+	type Output = Result<Value, String>;
+
+	fn bitxor(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(l_int) => {
+				match rhs {
+					Integer(r_int) => {
+						Ok(Integer(l_int ^ r_int))
+					},
+					Float(_) => {
+						Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Xor))
+					},
+					Undefined => Ok(Undefined)
+				}
+			}
+			Float(_) => {
+				Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Xor))
+			}
+			Undefined => Ok(Undefined)
+		}
+	}
+}
+impl Shl for Value {
+	type Output = Result<Value, String>;
+
+	fn shl(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(l_int) => {
+				match rhs {
+					Integer(r_int) => {
+						Ok(Integer(l_int << r_int))
+					},
+					Float(_) => {
+						Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Shl))
+					},
+					Undefined => Ok(Undefined)
+				}
+			}
+			Float(_) => {
+				Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Shl))
+			}
+			Undefined => Ok(Undefined)
+		}
+	}
+}
+impl Shr for Value {
+	type Output = Result<Value, String>;
+
+	fn shr(self, rhs: Self) -> Self::Output {
+		match self {
+			Integer(l_int) => {
+				match rhs {
+					Integer(r_int) => {
+						Ok(Integer(l_int << r_int))
+					},
+					Float(_) => {
+						Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Shr))
+					},
+					Undefined => Ok(Undefined)
+				}
+			}
+			Float(_) => {
+				Err(format!("Failed to use operator '{:?}': Bitwise operators are not supported between floating-point values!", BinaryOperatorType::Shr))
+			}
+			Undefined => Ok(Undefined)
+		}
+	}
+}
+
+impl Eq for Value {}
+
+impl PartialEq<Self> for Value {
+	fn eq(&self, other: &Self) -> bool {
+		match self {
+			Undefined => match other {
+				Undefined => true,
+				_ => false
+			},
+			Integer(l_int) => match other {
+				Integer(r_int) => l_int == r_int,
+				_ => false
+			},
+			Float(l_flt) => match other {
+				Integer(r_int) => {
+					*l_flt == (*r_int as f64)
+				},
+				Float(r_flt) => {
+					l_flt == r_flt
+				}
+				Undefined => false
+			}
+		}
+	}
+}
+impl PartialOrd<Self> for Value {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		let left = match self {
+			Integer(int) => int.clone() as f64,
+			Float(flt) => flt.clone(),
+			Undefined => f64::NAN
+		};
+		let right = match other {
+			Integer(int) => int.clone() as f64,
+			Float(flt) => flt.clone(),
+			Undefined => f64::NAN
+		};
+		return left.partial_cmp(&right);
+	}
+}
+impl Ord for Value {
+	fn cmp(&self, other: &Self) -> Ordering {
+		let left = match self {
+			Integer(int) => int.clone() as f64,
+			Float(flt) => flt.clone(),
+			Undefined => f64::NAN
+		};
+		let right = match other {
+			Integer(int) => int.clone() as f64,
+			Float(flt) => flt.clone(),
+			Undefined => f64::NAN
+		};
+
+		if left < right {
+			Ordering::Less
+		} else if left == right {
+			Ordering::Equal
+		} else {
+			Ordering::Greater
+		}
+	}
+}
+
+impl Display for Value {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Undefined => write!(f, "undefined"),
+			Integer(int) => write!(f, "{}", int),
+			Float(flt) => write!(f, "{}", flt)
+		}
+	}
 }
 
 struct Calculator {
@@ -19,67 +437,105 @@ impl Calculator {
 			globals: HashMap::new()
 		}
 	}
-	fn calculate(src: &'static str) -> Result<Value, String> {
-		let mut operator_stack = VecDeque::new();
-		let mut output = VecDeque::new();
-		let mut result = 0.0f64;
+	pub fn set_var(&mut self, name: &String, value: &Value) {
+		if !self.globals.contains_key(name) {
+			self.globals.insert(name.clone(), value.clone());
+		} else {
+			*self.globals.get_mut(name).unwrap() = value.clone();
+		}
+	}
+	pub fn calculate(&mut self, src: String) -> Result<Value, String> {
+		let tokens_r = Token::tokenize(src);
+		if let Ok(tokens) = tokens_r {
+			let operator_stack = Stack::new();
+			let queue = Queue::new();
 
-		match Token::tokenize(src) {
-			Err(err) => { return Err(err); },
-			Ok(tokens) => {
-				for token in tokens {
-					if token.is_operator() {
-						if operator_stack.len() > 0 {
-							match operator_stack.back().unwrap() {
-								Token::UnaryOperator(_) => {
-									output.push_back(operator_stack.pop_back().unwrap());
-								},
-								Token::BinaryOperator(opTypePrev) => {
-									match token.clone() {
-										Token::BinaryOperator(opType) => {
-											if opTypePrev.order() > opType.order() {
-												output.push_back(operator_stack.pop_back().unwrap());
-											}
-										}
-										_ => { /* Do nothing */ }
-									}
-								}
-								_ => { /* Do nothing */ }
-							}
-						}
-						operator_stack.push_back(token);
-					} else if token == Token::OpenParen {
-						operator_stack.push_back(token);
-					} else if token == Token::CloseParen {
-						if operator_stack.len() == 0 {
-							return Err(format!("Invalid token: '{}'", ')'));
-						}
+			for token in &tokens {
 
-						let mut item = operator_stack.back().unwrap();
-						while *item != Token::OpenParen {
-							output.push_back(operator_stack.pop_back().unwrap());
-							if operator_stack.len() == 0 {
-								return Err("Expected an opening parenthesis!".to_string());
-							}
-							item = operator_stack.back().unwrap();
-						}
-					} else {
-						output.push_back(token);
-					}
-				}
-
-				// TODO: Parse processed tokens
-
-				return if result == result.round() {
-					Ok(Integer(result.round() as i64))
-				} else {
-					Ok(Float(result))
-				}
 			}
+
+			Ok(Undefined)
+		} else {
+			Err(tokens_r.err().unwrap())
 		}
 	}
 }
 
-fn main() {
+fn prompt(message: &'static str) -> String {
+	print!("{}", message);
+	io::stdout().flush().unwrap();
+	let mut line = String::new();
+	io::stdin().lock().read_line(&mut line).unwrap();
+	return line.trim().to_string();
+}
 
+fn main() {
+	let mut calc = Calculator::new();
+	let mut line = prompt(">>> ");
+	let mut assign = String::new();
+	let mut display_as = NumberBaseType::Decimal;
+
+	while line != "exit" {
+		if line.starts_with("set ") {
+			line = line.replace("set ", "");
+			let c = line.chars().nth(0).unwrap();
+			if !c.is_whitespace() && c.is_alphanumeric() || c == '_' {
+				assign.push(c);
+				line.remove(0);
+			}
+		} else if line.starts_with("hex ") {
+			display_as = NumberBaseType::Hex;
+			line = line.replace("hex ", "");
+		} else if line.starts_with("dec ") {
+			display_as = NumberBaseType::Decimal;
+			line = line.replace("dec ", "");
+		} else if line.starts_with("oct ") {
+			display_as = NumberBaseType::Octal;
+			line = line.replace("oct ", "");
+		} else if line.starts_with("bin ") {
+			display_as = NumberBaseType::Binary;
+			line = line.replace("bin ", "");
+		}
+
+		match calc.calculate(line) {
+			Ok(result) => {
+				if assign.is_empty() {
+					match display_as {
+						NumberBaseType::Decimal => { println!("{}", result); },
+						NumberBaseType::Binary => {
+							match result {
+								Undefined => { println!("undefined"); }
+								Integer(int) => { println!("{:#b}", int); }
+								Float(flt) => { println!("{}", flt); }
+							}
+						},
+						NumberBaseType::Octal => {
+							match result {
+								Undefined => { println!("undefined"); }
+								Integer(int) => { println!("{:#o}", int); }
+								Float(flt) => { println!("{}", flt); }
+							}
+						},
+						NumberBaseType::Hex => {
+							match result {
+								Undefined => { println!("undefined"); }
+								Integer(int) => { println!("{:#X}", int); }
+								Float(flt) => { println!("{}", flt); }
+							}
+						},
+					}
+				} else {
+					calc.set_var(&assign, &result);
+					println!("[{}]: {}", assign, result);
+				}
+			},
+			Err(error) => {
+				println!("{}", format!("Error: {}", error).red())
+			}
+		}
+
+		assign.clear();
+		display_as = NumberBaseType::Decimal;
+		line = prompt(">>> ");
+	}
 }

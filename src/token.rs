@@ -1,7 +1,9 @@
-trait AsLowerCase {
+use crate::Value;
+
+pub trait AsLowerCase {
 	fn as_lowercase(&self) -> char;
 }
-trait AsUpperCase {
+pub trait AsUpperCase {
 	fn as_uppercase(&self) -> char;
 }
 impl AsLowerCase for char {
@@ -36,6 +38,8 @@ pub enum BinaryOperatorType {
 	And,
 	Or,
 	Xor,
+	Shl,
+	Shr,
 	Less,
 	LessEq,
 	More,
@@ -46,16 +50,18 @@ pub enum BinaryOperatorType {
 impl BinaryOperatorType {
 	pub fn order(self) -> u32 {
 		match self {
-			BinaryOperatorType::Add => 4,
-			BinaryOperatorType::Sub => 4,
-			BinaryOperatorType::Mul => 5,
-			BinaryOperatorType::Div => 5,
-			BinaryOperatorType::Mod => 5,
-			BinaryOperatorType::Exp => 6,
+			BinaryOperatorType::Add => 5,
+			BinaryOperatorType::Sub => 5,
+			BinaryOperatorType::Mul => 6,
+			BinaryOperatorType::Div => 6,
+			BinaryOperatorType::Mod => 6,
+			BinaryOperatorType::Exp => 7,
 			BinaryOperatorType::Fdiv => 5,
 			BinaryOperatorType::And => 2,
 			BinaryOperatorType::Or => 0,
 			BinaryOperatorType::Xor => 1,
+			BinaryOperatorType::Shl => 4,
+			BinaryOperatorType::Shr => 4,
 			BinaryOperatorType::Less => 3,
 			BinaryOperatorType::LessEq => 3,
 			BinaryOperatorType::More => 3,
@@ -66,6 +72,7 @@ impl BinaryOperatorType {
 	}
 }
 
+#[derive(Debug)]
 pub enum Token {
 	Invalid,
 	Integer(i64),
@@ -73,6 +80,7 @@ pub enum Token {
 	Identifier(String),
 	UnaryOperator(UnaryOperatorType),
 	BinaryOperator(BinaryOperatorType),
+	Assignment,
 	OpenParen,
 	CloseParen
 }
@@ -86,8 +94,9 @@ impl Clone for Token {
 			Token::Identifier(id) => Token::Identifier(id.clone()),
 			Token::UnaryOperator(u) => Token::UnaryOperator(u.clone()),
 			Token::BinaryOperator(b) => Token::BinaryOperator(b.clone()),
+			Token::Assignment => Token::Assignment,
 			Token::OpenParen => Token::OpenParen,
-			Token::CloseParen => Token::CloseParen
+			Token::CloseParen => Token::CloseParen,
 		}
 	}
 }
@@ -131,6 +140,12 @@ impl PartialEq<Self> for Token {
 					_ => false
 				}
 			},
+			Token::Assignment => {
+				match other {
+					Token::Assignment => true,
+					_ => false
+				}
+			}
 			Token::OpenParen => {
 				match other {
 					Token::OpenParen => true,
@@ -204,16 +219,36 @@ impl Token {
 			_ => false
 		}
 	}
+	pub fn is_value(&self) -> bool {
+		match self {
+			Token::Integer(_) | Token::Float(_) | Token::Identifier(_) => true,
+			_ => false
+		}
+	}
+	pub fn is_identifier(&self) -> bool {
+		match self {
+			Token::Identifier(_) => true,
+			_ => false
+		}
+	}
+	pub fn as_value(&self) -> Option<Value> {
+		match self {
+			Token::Integer(int) => Some(Value::Integer(int.clone())),
+			Token::Float(flt) => Some(Value::Float(flt.clone())),
+			_ => None
+		}
+	}
 	fn char_is_operator(c: char) -> bool {
 		"+-*/%&|^<>=".contains(c)
 	}
-	pub fn tokenize(src: &str) -> Result<Vec<Token>, String> {
+	pub fn tokenize(src: String) -> Result<Vec<Token>, String> {
 		let mut tokens = Vec::new();
 		let mut i = 0usize;
-		let mut tokenValue = String::new();
-		let mut foundDecimal = false;
-		let mut numberBase = NumberBaseType::Decimal;
+		let mut token_value = String::new();
+		let mut found_decimal = false;
+		let mut number_base = NumberBaseType::Decimal;
 		let mut state = TokenizerState::Default;
+		let mut should_parse = false;
 
 		while i < src.len() {
 			match src.chars().nth(i) {
@@ -234,26 +269,42 @@ impl Token {
 									}
 									c = cr.unwrap().as_lowercase();
 									if c == 'x' {
-										numberBase = NumberBaseType::Hex;
+										number_base = NumberBaseType::Hex;
 										i += 1;
 									} else if c == 'b' {
-										numberBase = NumberBaseType::Binary;
+										number_base = NumberBaseType::Binary;
 										i += 1;
-									} else if c == 'o' || c == '0' {
-										numberBase = NumberBaseType::Octal;
-										i += 1;
+									} else if c == 'o' || c.is_numeric() {
+										number_base = NumberBaseType::Octal;
+										if c == 'o' {
+											i += 1;
+										}
 									} else {
-										numberBase = NumberBaseType::Decimal;
+										number_base = NumberBaseType::Decimal;
 									}
 								} else {
-									numberBase = NumberBaseType::Decimal;
+									number_base = NumberBaseType::Decimal;
 								}
-								foundDecimal = false;
-								tokenValue.clear();
+								found_decimal = false;
+								token_value.clear();
 								state = TokenizerState::Number;
 							} else if "-!~".contains(c) {
 								if c == '-' && (tokens.len() > 0 && !tokens.last().unwrap().is_binary_operator()) {
 									state = TokenizerState::BinaryOperator;
+								} else if c == '!' {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_none() {
+										return Err(format!("Unexpected token {}", c));
+									}
+
+									c = cr.unwrap();
+									if c == '=' {
+										tokens.push(Token::BinaryOperator(BinaryOperatorType::NotEqual));
+										i += 1;
+									} else {
+										tokens.push(Token::UnaryOperator(UnaryOperatorType::Not));
+									}
 								} else {
 									match c {
 										'-' => { tokens.push(Token::UnaryOperator(UnaryOperatorType::Negative)) },
@@ -265,6 +316,12 @@ impl Token {
 								}
 							} else if Token::char_is_operator(c) {
 								state = TokenizerState::BinaryOperator;
+							} else if c == '(' {
+								tokens.push(Token::OpenParen);
+								i += 1;
+							} else if c == ')' {
+								tokens.push(Token::CloseParen);
+								i += 1;
 							} else {
 								return Err(format!("Unexpected character '{}'", c));
 							}
@@ -272,22 +329,28 @@ impl Token {
 						TokenizerState::Number => {
 							if c == '_' {
 								i += 1;
-							} else if numberBase == NumberBaseType::Decimal && c == '.' {
-								if foundDecimal {
-									return Err(format!("Invalid number literal \"{}{}\"", tokenValue, c));
+							} else if number_base == NumberBaseType::Decimal && c == '.' {
+								if found_decimal {
+									return Err(format!("Invalid number literal \"{}{}\"", token_value, c));
 								} else {
-									tokenValue.push(c);
-									foundDecimal = true;
+									token_value.push(c);
+									found_decimal = true;
 									i += 1;
 								}
-							} else if numberBase.is_char_valid(c) {
-								tokenValue.push(c);
+							} else if number_base.is_char_valid(c) {
+								token_value.push(c);
 								i += 1;
-							} else if Token::char_is_operator(c) || c.is_whitespace() {
-								match numberBase {
+							} else if Token::char_is_operator(c) || c.is_whitespace() || c == '(' || c == ')' {
+								should_parse = true;
+							} else {
+								return Err(format!("Invalid number literal \"{}{}\"", token_value, c));
+							}
+
+							if i + 1 >= src.len() || should_parse {
+								match number_base {
 									NumberBaseType::Decimal => {
-										if tokenValue.contains('.') {
-											match tokenValue.parse::<f64>() {
+										if token_value.contains('.') {
+											match token_value.parse::<f64>() {
 												Ok(f) => {
 													tokens.push(Token::Float(f))
 												},
@@ -296,9 +359,9 @@ impl Token {
 												}
 											}
 										} else {
-											match tokenValue.parse::<i64>() {
-												Ok(i) => {
-													tokens.push(Token::Integer(i))
+											match token_value.parse::<i64>() {
+												Ok(int) => {
+													tokens.push(Token::Integer(int))
 												},
 												Err(err) => {
 													return Err(format!("Failed to parse number literal: \"{:?}\"", err));
@@ -307,9 +370,9 @@ impl Token {
 										}
 									}
 									NumberBaseType::Binary => {
-										match i64::from_str_radix(tokenValue.as_str(), 2) {
-											Ok(i) => {
-												tokens.push(Token::Integer(i))
+										match i64::from_str_radix(token_value.as_str(), 2) {
+											Ok(int) => {
+												tokens.push(Token::Integer(int))
 											},
 											Err(err) => {
 												return Err(format!("Failed to parse number literal: \"{:?}\"", err));
@@ -317,9 +380,9 @@ impl Token {
 										}
 									},
 									NumberBaseType::Octal => {
-										match i64::from_str_radix(tokenValue.as_str(), 8) {
-											Ok(i) => {
-												tokens.push(Token::Integer(i))
+										match i64::from_str_radix(token_value.as_str(), 8) {
+											Ok(int) => {
+												tokens.push(Token::Integer(int))
 											},
 											Err(err) => {
 												return Err(format!("Failed to parse number literal: \"{:?}\"", err));
@@ -327,9 +390,9 @@ impl Token {
 										}
 									},
 									NumberBaseType::Hex => {
-										match i64::from_str_radix(tokenValue.as_str(), 16) {
-											Ok(i) => {
-												tokens.push(Token::Integer(i))
+										match i64::from_str_radix(token_value.as_str(), 16) {
+											Ok(int) => {
+												tokens.push(Token::Integer(int))
 											},
 											Err(err) => {
 												return Err(format!("Failed to parse number literal: \"{:?}\"", err));
@@ -337,30 +400,149 @@ impl Token {
 										}
 									}
 								}
-								foundDecimal = false;
-								tokenValue.clear();
+								should_parse = false;
+								found_decimal = false;
+								token_value.clear();
 								state = TokenizerState::Default;
-							} else {
-								return Err(format!("Invalid number literal \"{}{}\"", tokenValue, c));
 							}
 						},
 						TokenizerState::Identifier => {
-							if Token::char_is_operator(c) || c.is_whitespace() {
-								tokens.push(Token::Identifier(tokenValue.clone()));
-								tokenValue.clear();
+							if Token::char_is_operator(c) || c.is_whitespace() || c == '(' || c == ')' || i + 1 >= src.len() {
+								tokens.push(Token::Identifier(token_value.clone()));
+								token_value.clear();
 								state = TokenizerState::Default;
 							} else if c.is_alphanumeric() || c == '_' {
-								tokenValue.push(c);
+								token_value.push(c);
 								i += 1;
 							} else {
 								return Err(format!("Unexpected character '{}'", c));
 							}
 						},
-						TokenizerState::BinaryOperator => {}
+						TokenizerState::BinaryOperator => {
+							match c {
+								'+' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Add));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'-' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Sub));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'*' => {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_some() {
+										c = cr.unwrap();
+										if c == '*' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::Exp));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										}
+									}
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Mul));
+									state = TokenizerState::Default;
+								},
+								'/' => {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_some() {
+										c = cr.unwrap();
+										if c == '/' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::Fdiv));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										}
+									}
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Div));
+									state = TokenizerState::Default;
+								},
+								'%' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Mod));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'&' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::And));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'|' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Or));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'^' => {
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Xor));
+									state = TokenizerState::Default;
+									i += 1;
+								},
+								'<' => {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_some() {
+										c = cr.unwrap();
+										if c == '<' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::Shl));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										} else if c == '=' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::LessEq));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										}
+									}
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::Less));
+									state = TokenizerState::Default;
+								},
+								'>' => {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_some() {
+										c = cr.unwrap();
+										if c == '>' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::Shr));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										} else if c == '=' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::MoreEq));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										}
+									}
+									tokens.push(Token::BinaryOperator(BinaryOperatorType::More));
+									state = TokenizerState::Default;
+								},
+								'=' => {
+									i += 1;
+									let cr = src.chars().nth(i);
+									if cr.is_some() {
+										c = cr.unwrap();
+										if c == '=' {
+											tokens.push(Token::BinaryOperator(BinaryOperatorType::Equal));
+											i += 1;
+											state = TokenizerState::Default;
+											continue;
+										}
+									}
+									tokens.push(Token::Assignment);
+									state = TokenizerState::Default;
+								},
+								_ => { return Err(format!("Invalid operator {}", c)) }
+							}
+						},
 					}
 				},
 				None => break
 			}
+
 		}
 
 		return Ok(tokens);
