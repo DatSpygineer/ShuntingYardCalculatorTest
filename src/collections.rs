@@ -1,17 +1,20 @@
 use std::collections::VecDeque;
 use std::ops::Index;
 
+#[derive(Debug)]
 pub struct Stack<T> {
 	data: VecDeque<T>
 }
 impl<T> Stack<T> {
 	pub fn new() -> Self {
-		Self {
-			data: VecDeque::new()
-		}
+		Self { data: VecDeque::new() }
+	}
+	pub fn from_vec(vec: Vec<T>) -> Self {
+		let data = VecDeque::from(vec);
+		Self { data }
 	}
 
-	pub fn push(&mut self, data: &T) {
+	pub fn push(&mut self, data: T) {
 		self.data.push_back(data);
 	}
 	pub fn pop(&mut self) -> Option<T> {
@@ -31,6 +34,7 @@ impl<T> Stack<T> {
 	}
 }
 
+#[derive(Debug)]
 pub struct Queue<T> {
 	data: VecDeque<T>
 }
@@ -38,12 +42,12 @@ impl<T> Queue<T> {
 	pub fn new() -> Self {
 		Self { data: VecDeque::new() }
 	}
-	pub fn from_vec(vec: &Vec<T>) -> Self {
+	pub fn from_vec(vec: Vec<T>) -> Self {
 		let data = VecDeque::from(vec);
 		Self { data }
 	}
 
-	pub fn enqueue(&mut self, data: &T) {
+	pub fn enqueue(&mut self, data: T) {
 		self.data.push_back(data);
 	}
 	pub fn dequeue(&mut self) -> Option<T> {

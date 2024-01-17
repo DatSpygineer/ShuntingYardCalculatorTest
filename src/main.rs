@@ -5,7 +5,7 @@ mod collections;
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, format, Formatter};
 use std::io;
 use std::io::{BufRead, Write};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
@@ -447,12 +447,49 @@ impl Calculator {
 	pub fn calculate(&mut self, src: String) -> Result<Value, String> {
 		let tokens_r = Token::tokenize(src);
 		if let Ok(tokens) = tokens_r {
-			let operator_stack = Stack::new();
-			let queue = Queue::new();
+			let mut operator_stack = Stack::new();
+			let mut value_queue = Queue::new();
 
 			for token in &tokens {
-
+				match token {
+					Token::Integer(_) | Token::Float(_) | Token::Identifier(_) => {
+						value_queue.enqueue(token);
+					},
+					Token::UnaryOperator(op) => {
+						operator_stack.push(token);
+					},
+					Token::BinaryOperator(op) => {
+						if let Some(top) = operator_stack.peek() {
+							if let Token::BinaryOperator(op_other) = top {
+								if op_other.order() > op.order() {
+									value_queue.enqueue(operator_stack.pop().unwrap());
+								}
+							}
+						}
+						operator_stack.push(token);
+					},
+					Token::OpenParen => {
+						operator_stack.push(token);
+					},
+					Token::CloseParen => {
+						while let Some(op) = operator_stack.pop() {
+							match op {
+								Token::UnaryOperator(_) => { value_queue.enqueue(op) },
+								Token::BinaryOperator(_) => { value_queue.enqueue(op) },
+								Token::OpenParen => { break; },
+								_ => { /* Do nothing */ }
+							}
+						}
+					},
+					_ => { return Err(format!("Unexpected token \"{:?}\"", token)); }
+				}
 			}
+
+			while let Some(op) = operator_stack.pop() {
+				value_queue.enqueue(op);
+			}
+
+			println!("Sorted values: {:?}", value_queue);
 
 			Ok(Undefined)
 		} else {
