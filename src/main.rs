@@ -28,15 +28,15 @@ impl Value {
 			_ => false
 		}
 	}
-	pub fn pow(&self, rhs: &Value) -> Value {
+	pub fn pow(&self, rhs: Value) -> Value {
 		match self {
 			Integer(i_left) => {
 				match rhs {
 					Integer(i_right) => {
-						Integer(i_left.pow((*i_right) as u32))
+						Integer(i_left.pow((i_right) as u32))
 					},
 					Float(f_right) => {
-						Float((*i_left as f64).powf(*f_right))
+						Float((*i_left as f64).powf(f_right))
 					}
 					Undefined => Undefined
 				}
@@ -44,10 +44,10 @@ impl Value {
 			Float(f_left) => {
 				match rhs {
 					Integer(i_right) => {
-						Float(f_left.powi(*i_right as i32))
+						Float(f_left.powi(i_right as i32))
 					},
 					Float(f_right) => {
-						Float(f_left.powf(*f_right))
+						Float(f_left.powf(f_right))
 					}
 					Undefined => Undefined
 				}
@@ -60,6 +60,13 @@ impl Value {
 			Undefined => Undefined,
 			Integer(int) => Integer(int.clone()),
 			Float(flt) => Integer(flt.floor() as i64)
+		}
+	}
+	pub fn as_float(&self) -> f64 {
+		match self {
+			Undefined => 0.0f64,
+			Integer(int) => int.clone() as f64,
+			Float(flt) => flt.clone()
 		}
 	}
 }
@@ -462,9 +469,16 @@ impl Calculator {
 					},
 					Token::BinaryOperator(op) => {
 						if let Some(top) = operator_stack.peek() {
-							if let Token::BinaryOperator(op_other) = top {
-								if op_other.order() > op.order() {
+							if let Token::BinaryOperator(mut op_other) = top {
+								while op_other.order() > op.order() {
 									value_queue.enqueue(operator_stack.pop().unwrap());
+									if let Some(next) = operator_stack.peek() {
+										if let Token::BinaryOperator(op_next) = next {
+											op_other = *op_next;
+										}
+									} else {
+										break;
+									}
 								}
 							}
 						}
@@ -494,6 +508,145 @@ impl Calculator {
 			println!("Sorted values: {:?}", value_queue);
 
 			let mut result_stack: Stack<Value> = Stack::new();
+
+			while let Some(token) = value_queue.dequeue() {
+				match token {
+					Token::Integer(int) => {
+						result_stack.push(Integer(*int));
+					},
+					Token::Float(flt) => {
+						result_stack.push(Float(*flt));
+					},
+					Token::Identifier(symbol) => {
+						if let Some(var) = self.globals.get(symbol) {
+							result_stack.push(var.clone());
+						} else {
+							return Err(format!("Variable \"{}\" is undefined!", symbol));
+						}
+					},
+					Token::UnaryOperator(op) => {
+						if !result_stack.is_empty() {
+							let value = result_stack.pop().unwrap();
+							match op {
+								UnaryOperatorType::Negative => {
+									result_stack.push(-value);
+								},
+								UnaryOperatorType::Not => {
+									result_stack.push(Integer(if value.as_float() == 0.0 { 1 } else { 0 }));
+								},
+								UnaryOperatorType::Invert => {
+									match value {
+										Integer(int) => {
+											result_stack.push(Integer(!int));
+										},
+										_ => { return Err("Bitwise operations are only allowed for integer values!".to_string()); }
+									}
+								}
+							}
+						}
+					},
+					Token::BinaryOperator(op) => {
+						if result_stack.len() >= 2 {
+							let right = result_stack.pop().unwrap();
+							let left = result_stack.pop().unwrap();
+							match op {
+								BinaryOperatorType::Add => {
+									result_stack.push(left + right);
+								},
+								BinaryOperatorType::Sub => {
+									result_stack.push(left - right);
+								},
+								BinaryOperatorType::Mul => {
+									result_stack.push(left * right);
+								},
+								BinaryOperatorType::Div => {
+									result_stack.push(left / right);
+								},
+								BinaryOperatorType::Mod => {
+									result_stack.push(left % right);
+								},
+								BinaryOperatorType::Exp => {
+									result_stack.push(left.pow(right));
+								},
+								BinaryOperatorType::Fdiv => {
+									result_stack.push((left / right).floor());
+								},
+								BinaryOperatorType::And => {
+									match left & right {
+										Ok(result) => {
+											result_stack.push(result);
+										},
+										Err(err) => {
+											return Err(err);
+										}
+									}
+								},
+								BinaryOperatorType::Or => {
+									match left | right {
+										Ok(result) => {
+											result_stack.push(result);
+										},
+										Err(err) => {
+											return Err(err);
+										}
+									}
+								},
+								BinaryOperatorType::Xor => {
+									match left ^ right {
+										Ok(result) => {
+											result_stack.push(result);
+										},
+										Err(err) => {
+											return Err(err);
+										}
+									}
+								},
+								BinaryOperatorType::Shl => {
+									match left << right {
+										Ok(result) => {
+											result_stack.push(result);
+										},
+										Err(err) => {
+											return Err(err);
+										}
+									}
+								},
+								BinaryOperatorType::Shr => {
+									match left >> right {
+										Ok(result) => {
+											result_stack.push(result);
+										},
+										Err(err) => {
+											return Err(err);
+										}
+									}
+								},
+								BinaryOperatorType::Less => {
+									result_stack.push(Integer(if left < right { 1 } else { 0 }));
+								},
+								BinaryOperatorType::LessEq => {
+									result_stack.push(Integer(if left <= right { 1 } else { 0 }));
+								},
+								BinaryOperatorType::More => {
+									result_stack.push(Integer(if left > right { 1 } else { 0 }));
+								},
+								BinaryOperatorType::MoreEq => {
+									result_stack.push(Integer(if left >= right { 1 } else { 0 }));
+								},
+								BinaryOperatorType::Equal => {
+									result_stack.push(Integer(if left == right { 1 } else { 0 }));
+								},
+								BinaryOperatorType::NotEqual => {
+									result_stack.push(Integer(if left != right { 1 } else { 0 }));
+								},
+							}
+						} else {
+							return Err(format!("Failed to execute operation {:?}: Not enough values in result stack!", token));
+						}
+					},
+					_ => { return Err(format!("Unexpected token \"{:?}\"", token)); }
+				}
+			}
 
 			if let Some(result) = result_stack.pop() {
 				Ok(result)
