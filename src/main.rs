@@ -475,6 +475,8 @@ impl Calculator {
 									if let Some(next) = operator_stack.peek() {
 										if let Token::BinaryOperator(op_next) = next {
 											op_other = *op_next;
+										} else {
+											break;
 										}
 									} else {
 										break;
