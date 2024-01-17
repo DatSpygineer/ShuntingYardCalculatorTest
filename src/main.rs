@@ -450,6 +450,8 @@ impl Calculator {
 			let mut operator_stack = Stack::new();
 			let mut value_queue = Queue::new();
 
+			println!("Tokens: {:?}", tokens);
+
 			for token in &tokens {
 				match token {
 					Token::Integer(_) | Token::Float(_) | Token::Identifier(_) => {
@@ -491,7 +493,13 @@ impl Calculator {
 
 			println!("Sorted values: {:?}", value_queue);
 
-			Ok(Undefined)
+			let mut result_stack: Stack<Value> = Stack::new();
+
+			if let Some(result) = result_stack.pop() {
+				Ok(result)
+			} else {
+				Err("No value in result stack!".to_string())
+			}
 		} else {
 			Err(tokens_r.err().unwrap())
 		}
